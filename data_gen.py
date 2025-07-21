@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser(description="TXT 파일을 읽어 이미지/텍
 parser.add_argument(
     "--base_dir",
     type=str,
-    default="/workspace/data/findit2",
+    default="/workspace/FindIt2/data",
     help="작업할 기본 디렉토리 경로"
 )
 args = parser.parse_args()

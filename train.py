@@ -1,3 +1,4 @@
+import pandas as pd
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import logging
@@ -12,7 +13,7 @@ from transformers import RobertaTokenizer
 from model import get_model
 from data import ReceiptForgeryDataset
 from trainer import ImageTrainer, TextTrainer
-from util import set_seed
+from util import set_seed, FocalLoss
 
 @hydra.main(config_path="conf", config_name="config", version_base=None)
 def main(cfg: DictConfig):
@@ -32,38 +33,34 @@ def main(cfg: DictConfig):
     # ──────────────────────────────
     base_dir = cfg.base_dir
     img_transform = transforms.Compose([
-        # 크기 조정
-        transforms.Resize((256, 256)),
-        transforms.RandomResizedCrop(224, scale=(0.9, 1.0), ratio=(0.9, 1.1)),
-        
-        # 밝기/대비/채도/색조 약간 변화
+        transforms.Resize((512, 512)),
+
+        # 색상 변형 (너무 강하면 안됨)
         transforms.ColorJitter(
-            brightness=0.2,  # 밝기
-            contrast=0.2,    # 대비
-            saturation=0.1,  # 채도
-            hue=0.02         # 색조
+            brightness=0.1,   # 밝기 변화 줄임
+            contrast=0.1,     # 대비 변화 줄임
+            saturation=0.05,  # 채도 변화 줄임
+            hue=0.01          # 색조 변화 줄임
         ),
 
-        # 좌우 뒤집기 (영수증은 대칭적이라 큰 문제 없지만 세로텍스트가 있다면 False)
-        # transforms.RandomHorizontalFlip(p=0.5),  # 필요하면 사용
+        # 랜덤 회전 (영수증은 보통 약간만 기울어짐)
+        transforms.RandomRotation(degrees=1.5, fill=255),
 
-        # 약간의 회전 (영수증이 약간 기울어질 수 있음)
-        transforms.RandomRotation(degrees=2.0, expand=False, fill=255),
-
-        # 랜덤한 미세한 affine 변형 (약간의 이동/기울임)
+        # 약한 affine 변형 (이동/스케일 범위 축소)
         transforms.RandomAffine(
             degrees=0,
-            translate=(0.02, 0.02),  # 최대 2% 이동
-            shear=2,                # 약간의 기울임
-            fill=255                # 배경색을 흰색으로 채움
+            translate=(0.02, 0.02),  # 2% 범위 이동
+            shear=1,                 # 기울기 줄임
+            scale=(0.98, 1.02),      # 스케일 변화를 최소화
+            fill=255
         ),
 
-        # 텐서 변환
-        transforms.ToTensor(),
+        # GaussianBlur 확률도 줄이고 kernel 작게
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3)], p=0.1),
 
-        # Normalize (필요하다면 ImageNet 기준)
+        transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                            std=[0.229, 0.224, 0.225])
+                            std=[0.229, 0.224, 0.225]),
     ])
 
     tokenizer = RobertaTokenizer.from_pretrained("roberta-base")
@@ -104,7 +101,11 @@ def main(cfg: DictConfig):
     if cfg.model_type == "image":
         model = get_model("resnet50")
         optimizer = optim.Adam(model.parameters(), lr=cfg.image_lr)
-        criterion = nn.CrossEntropyLoss()
+        # ==========================
+        # ✨ FocalLoss 적용
+        # ==========================
+        criterion = FocalLoss(gamma=2.0, alpha=[1.0, 2.0], reduction='mean')
+       
         trainer = ImageTrainer(
             model=model,
             optimizer=optimizer,
@@ -119,7 +120,10 @@ def main(cfg: DictConfig):
     elif cfg.model_type == "text":
         model = get_model("roberta")
         optimizer = optim.AdamW(model.parameters(), lr=cfg.text_lr)
-        criterion = nn.CrossEntropyLoss()
+        # ==========================
+        # ✨ FocalLoss 적용
+        # ==========================
+        criterion = FocalLoss(gamma=2.0, alpha=[1.0, 2.0], reduction='mean')
         trainer = TextTrainer(
             model=model,
             optimizer=optimizer,

@@ -7,7 +7,7 @@ parser = argparse.ArgumentParser(description="train.csv의 클래스 불균형�
 parser.add_argument(
     "--base_dir",
     type=str,
-    default="/workspace/data/findit2",
+    default="/workspace/FindIt2/data",
     help="train.csv가 위치한 기본 디렉토리 경로"
 )
 args = parser.parse_args()
