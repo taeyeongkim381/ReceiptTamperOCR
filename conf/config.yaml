@@ -1,0 +1,22 @@
+# 학습할 모델 선택: image 또는 text
+model_type: text  # or "text"
+
+# 공통 하이퍼파라미터
+seed: 42
+epochs: 10
+batch_size: 32
+num_workers: 4
+patience: 3
+
+# 이미지 모델 하이퍼파라미터
+image_lr: 1e-5
+
+# 텍스트 모델 하이퍼파라미터
+text_lr: 2e-5
+max_length: 512
+
+# 데이터 경로
+base_dir: /workspace/data/findit2
+train_csv: train_balanced.csv
+val_csv: val.csv
+test_csv: test.csv
