@@ -263,4 +263,4 @@ class TextTrainer:
             if self.no_improve_count >= self.patience:
                 self.logger.info("🛑 Early stopping triggered.")
                 break
-
+            

@@ -1,77 +1,82 @@
 import os
 import pandas as pd
-from torch.utils.data import Dataset
-from PIL import Image
+from sklearn.model_selection import train_test_split
+from torch.utils.data import Dataset, DataLoader
 import torch
+from PIL import Image
+from torchvision import transforms
+from transformers import RobertaTokenizerFast
 
-class ReceiptForgeryDataset(Dataset):
-    def __init__(self, csv_path:str, base_dir:str, split:str,
-                 image_transform=None, text_tokenizer=None, max_length:int=256):
-        """
-        csv_path: train.csv / val.csv / test.csv 경로
-        base_dir: "/workspace/data/findit2"
-        split: "train" | "val" | "test"
-        image_transform: torchvision.transforms.Compose
-        text_tokenizer: HuggingFace tokenizer
-        max_length: 토큰 최대 길이
-        """
-        self.df = pd.read_csv(csv_path)
-        self.base_dir = base_dir
-        self.split = split
-        self.image_transform = image_transform
-        self.text_tokenizer = text_tokenizer
-        self.max_length = max_length
-
-        # 이미지와 OCR 파일이 모두 들어있는 폴더
-        self.data_dir = os.path.join(base_dir, split)
+# ============================================================
+# 1. 이미지용 Dataset
+# ============================================================
+class ImageBinaryDataset(Dataset):
+    def __init__(self, csv_path, transform=None):
+        df = pd.read_csv(csv_path)
+        self.image_paths = df["image_path"].tolist()
+        self.labels = df["label"].tolist()
+        self.transform = transform
 
     def __len__(self):
-        return len(self.df)
+        return len(self.image_paths)
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-
-        # --- 이미지 로드 ---
-        image_name = row['image']   # 예: "X000001.png"
-        image_path = os.path.join(self.data_dir, image_name)
-        image = Image.open(image_path).convert("RGB")
-        if self.image_transform:
-            image = self.image_transform(image)
-        else:
-            from torchvision import transforms
-            image = transforms.ToTensor()(image)
-
-        # --- OCR 로드 ---
-        ocr_name = row['ocr']       # 예: "X000001.txt"
-        ocr_path = os.path.join(self.data_dir, ocr_name)
-        if os.path.exists(ocr_path):
-            with open(ocr_path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
-        else:
-            text = ""
-
-        # --- 토크나이징 ---
-        if self.text_tokenizer:
-            enc = self.text_tokenizer(
-                text,
-                padding="max_length",
-                truncation=True,
-                max_length=self.max_length,
-                return_tensors="pt"
-            )
-            input_ids = enc["input_ids"].squeeze(0)
-            attention_mask = enc["attention_mask"].squeeze(0)
-        else:
-            input_ids = torch.zeros(self.max_length, dtype=torch.long)
-            attention_mask = torch.zeros(self.max_length, dtype=torch.long)
-
-        # --- 라벨 ---
-        label = int(row['forged'])
-
+        img_path = self.image_paths[idx]
+        label = int(self.labels[idx])
+        image = Image.open(img_path).convert("RGB")
+        if self.transform:
+            image = self.transform(image)
         return {
             "image": image,
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
             "label": torch.tensor(label, dtype=torch.long)
         }
-    
+
+
+# ============================================================
+# 2. 텍스트용 Dataset (RoBERTa 토크나이저)
+# ============================================================
+tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+
+class TextBinaryDataset(Dataset):
+    def __init__(self, csv_path, tokenizer, max_len=512):
+        df = pd.read_csv(csv_path)
+        self.txt_paths = df["txt_path"].tolist()
+        self.labels = df["label"].tolist()
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+
+    def __len__(self):
+        return len(self.txt_paths)
+
+    def __getitem__(self, idx):
+        txt_path = self.txt_paths[idx]
+        label = int(self.labels[idx])
+        # txt 파일 읽기
+        with open(txt_path, "r", encoding="utf-8") as f:
+            text = f.read()
+        enc = self.tokenizer(
+            text,
+            padding="max_length",
+            truncation=True,
+            max_length=self.max_len,
+            return_tensors="pt"
+        )
+        return {
+            "input_ids": enc["input_ids"].squeeze(0),
+            "attention_mask": enc["attention_mask"].squeeze(0),
+            "label": torch.tensor(label, dtype=torch.long)
+        }
+
+
+# ============================================================
+# 3. Dataloader 생성 함수
+# ============================================================
+def split_train_valid(csv_path, valid_ratio=0.2):
+    df = pd.read_csv(csv_path)
+    train_df, valid_df = train_test_split(df, test_size=valid_ratio, stratify=df["label"], random_state=42)
+    base_dir = os.path.dirname(csv_path)
+    train_split = os.path.join(base_dir, "_train_split.csv")
+    valid_split = os.path.join(base_dir, "_valid_split.csv")
+    train_df.to_csv(train_split, index=False)
+    valid_df.to_csv(valid_split, index=False)
+    return train_split, valid_split
