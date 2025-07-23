@@ -3,23 +3,33 @@ import numpy as np
 import torch
 import os
 
-def set_seed(seed: int = 42):
+
+def set_seed(seed: int = 42) -> None:
     """
-    실험 재현성을 높이기 위해 시드를 고정하는 함수
+    Fix random seeds to make experiments reproducible.
+
+    Args:
+        seed (int): Seed value to set for all relevant libraries.
     """
-    print(f"🔧 Setting seed: {seed}")
-    # 파이썬 자체 랜덤
+    print(f"Setting seed: {seed}")
+
+    # Python built-in random
     random.seed(seed)
-    # Numpy 랜덤
+
+    # NumPy random
     np.random.seed(seed)
-    # PyTorch CPU 시드
+
+    # PyTorch (CPU)
     torch.manual_seed(seed)
-    # PyTorch CUDA 시드
+
+    # PyTorch (CUDA)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # cuDNN 동작 고정 (deterministic)
+
+    # cuDNN deterministic mode
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    # 추가: 환경 변수로도 시드 고정
+    # Environment variable for Python hashing
     os.environ["PYTHONHASHSEED"] = str(seed)
+    

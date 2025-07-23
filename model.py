@@ -2,33 +2,36 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 from transformers import RobertaForSequenceClassification
+from typing import Literal
 
-# -------------------------------
-# 📌 ResNet50 이진 분류기
-# -------------------------------
+
 class ResNet50Binary(nn.Module):
-    def __init__(self, pretrained=True, num_classes=2):
+    """ResNet50 backbone for binary classification."""
+    def __init__(self, pretrained: bool = True, num_classes: int = 2) -> None:
         super().__init__()
         self.backbone = models.resnet50(pretrained=pretrained)
         in_features = self.backbone.fc.in_features
         self.backbone.fc = nn.Linear(in_features, num_classes)
 
-    def forward(self, x):
-        return self.backbone(x)  # [B,2]
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.backbone(x)  # [B, num_classes]
 
-# -------------------------------
-# 📌 RoBERTa-base 이진 분류기
-# -------------------------------
+
 class RobertaBinary(nn.Module):
-    def __init__(self, pretrained_model_name="roberta-base", num_classes=2):
+    """RoBERTa model for binary classification."""
+    def __init__(self, pretrained_model_name: str = "roberta-base", num_classes: int = 2) -> None:
         super().__init__()
         self.model = RobertaForSequenceClassification.from_pretrained(
             pretrained_model_name,
             num_labels=num_classes
         )
 
-    def forward(self, input_ids, attention_mask=None, labels=None):
-        # HuggingFace 모델은 dict 형태로 반환
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor = None,
+        labels: torch.Tensor = None
+    ):
         return self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -36,10 +39,8 @@ class RobertaBinary(nn.Module):
         )
 
 
-def get_model(model_type: str):
-    """
-    model_type: "resnet50" 또는 "roberta"
-    """
+def get_model(model_type: Literal["resnet50", "roberta"]) -> nn.Module:
+    """Return a model instance based on type."""
     if model_type.lower() == "resnet50":
         return ResNet50Binary(pretrained=True)
     elif model_type.lower() == "roberta":

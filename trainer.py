@@ -3,13 +3,24 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score, classification_report
 import numpy as np
+import torch.nn as nn
+import torch.optim as optim
+from typing import Optional, Tuple, Dict, Any
 
 
 class ImageTrainer:
-    def __init__(self, model, optimizer, criterion, logger,
-                 scheduler=None, device="cuda",
-                 log_dir="./runs_image", patience=3,
-                 save_path="./best_image_model.pt"):
+    def __init__(
+        self,
+        model: nn.Module,
+        optimizer: optim.Optimizer,
+        criterion: nn.Module,
+        logger: Any,
+        scheduler: Optional[Any] = None,
+        device: str = "cuda",
+        log_dir: str = "./runs_image",
+        patience: int = 3,
+        save_path: str = "./best_image_model.pt",
+    ) -> None:
         self.model = model.to(device)
         self.optimizer = optimizer
         self.criterion = criterion
@@ -22,7 +33,7 @@ class ImageTrainer:
         self.no_improve_count = 0
         self.save_path = save_path
 
-    def train(self, loader, epoch):
+    def train(self, loader: torch.utils.data.DataLoader, epoch: int) -> Tuple[float, float]:
         self.model.train()
         running_loss = 0.0
         all_labels, all_preds = [], []
@@ -30,9 +41,9 @@ class ImageTrainer:
         pbar = tqdm(loader, desc=f"[Image Train {epoch}]")
         for batch in pbar:
             images = batch["image"].to(self.device)
-            labels = batch["label"].long().to(self.device)  # CE → long
+            labels = batch["label"].long().to(self.device)
 
-            logits = self.model(images)  # shape [B,2]
+            logits = self.model(images)
             loss = self.criterion(logits, labels)
 
             self.optimizer.zero_grad()
@@ -40,7 +51,7 @@ class ImageTrainer:
             self.optimizer.step()
 
             running_loss += loss.item()
-            probs = torch.softmax(logits, dim=1)[:, 1]  # positive class prob
+            probs = torch.softmax(logits, dim=1)[:, 1]
             all_labels.extend(labels.cpu().numpy())
             all_preds.extend(probs.detach().cpu().numpy())
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
@@ -53,7 +64,7 @@ class ImageTrainer:
         self.logger.info(f"[Image Train] Epoch {epoch} Loss {avg_loss:.4f} AUC {auc:.4f}")
         return avg_loss, auc
 
-    def val(self, loader, epoch):
+    def val(self, loader: torch.utils.data.DataLoader, epoch: int) -> Tuple[float, float]:
         self.model.eval()
         running_loss = 0.0
         all_labels, all_preds = [], []
@@ -87,19 +98,19 @@ class ImageTrainer:
             self.best_auc = auc
             self.no_improve_count = 0
             torch.save(self.model.state_dict(), self.save_path)
-            self.logger.info(f"💾 Best model saved with AUC {auc:.4f} → {self.save_path}")
+            self.logger.info(f"Best model saved with AUC {auc:.4f} -> {self.save_path}")
         else:
             self.no_improve_count += 1
-            self.logger.info(f"⏳ EarlyStopping counter: {self.no_improve_count}/{self.patience}")
+            self.logger.info(f"EarlyStopping counter: {self.no_improve_count}/{self.patience}")
 
         return avg_loss, auc
 
-    def test(self, loader):
+    def test(self, loader: torch.utils.data.DataLoader) -> float:
         self.model.eval()
         all_labels, all_preds = [], []
 
         with torch.no_grad():
-            pbar = tqdm(loader, desc=f"[Image Test]")
+            pbar = tqdm(loader, desc="[Image Test]")
             for batch in pbar:
                 images = batch["image"].to(self.device)
                 labels = batch["label"].long().to(self.device)
@@ -118,25 +129,32 @@ class ImageTrainer:
         ))
         return auc
 
-    def training(self, train_loader, val_loader, epochs):
+    def training(self, train_loader: torch.utils.data.DataLoader, val_loader: torch.utils.data.DataLoader, epochs: int) -> None:
         for epoch in range(1, epochs + 1):
             train_loss, train_auc = self.train(train_loader, epoch)
             val_loss, val_auc = self.val(val_loader, epoch)
 
-            # ✅ TensorBoard에서 한 그래프에서 비교
             self.writer.add_scalars("Loss", {"train": train_loss, "val": val_loss}, epoch)
             self.writer.add_scalars("AUC", {"train": train_auc, "val": val_auc}, epoch)
 
             if self.no_improve_count >= self.patience:
-                self.logger.info("🛑 Early stopping triggered.")
+                self.logger.info("Early stopping triggered.")
                 break
 
 
 class TextTrainer:
-    def __init__(self, model, optimizer, criterion, logger,
-                 scheduler=None, device="cuda",
-                 log_dir="./runs_text", patience=3,
-                 save_path="./best_text_model.pt"):
+    def __init__(
+        self,
+        model: nn.Module,
+        optimizer: optim.Optimizer,
+        criterion: nn.Module,
+        logger: Any,
+        scheduler: Optional[Any] = None,
+        device: str = "cuda",
+        log_dir: str = "./runs_text",
+        patience: int = 3,
+        save_path: str = "./best_text_model.pt",
+    ) -> None:
         self.model = model.to(device)
         self.optimizer = optimizer
         self.criterion = criterion
@@ -149,7 +167,7 @@ class TextTrainer:
         self.no_improve_count = 0
         self.save_path = save_path
 
-    def train(self, loader, epoch):
+    def train(self, loader: torch.utils.data.DataLoader, epoch: int) -> Tuple[float, float]:
         self.model.train()
         running_loss = 0.0
         all_labels, all_preds = [], []
@@ -161,7 +179,7 @@ class TextTrainer:
             labels = batch["label"].long().to(self.device)
 
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-            logits = outputs.logits  # [B,2]
+            logits = outputs.logits
             loss = self.criterion(logits, labels)
 
             self.optimizer.zero_grad()
@@ -184,7 +202,7 @@ class TextTrainer:
         self.logger.info(f"[Text Train] Epoch {epoch} Loss {avg_loss:.4f} AUC {auc:.4f}")
         return avg_loss, auc
 
-    def val(self, loader, epoch):
+    def val(self, loader: torch.utils.data.DataLoader, epoch: int) -> Tuple[float, float]:
         self.model.eval()
         running_loss = 0.0
         all_labels, all_preds = [], []
@@ -218,19 +236,19 @@ class TextTrainer:
             self.best_auc = auc
             self.no_improve_count = 0
             torch.save(self.model.state_dict(), self.save_path)
-            self.logger.info(f"💾 Best model saved with AUC {auc:.4f} → {self.save_path}")
+            self.logger.info(f"Best model saved with AUC {auc:.4f} -> {self.save_path}")
         else:
             self.no_improve_count += 1
-            self.logger.info(f"⏳ EarlyStopping counter: {self.no_improve_count}/{self.patience}")
+            self.logger.info(f"EarlyStopping counter: {self.no_improve_count}/{self.patience}")
 
         return avg_loss, auc
 
-    def test(self, loader):
+    def test(self, loader: torch.utils.data.DataLoader) -> float:
         self.model.eval()
         all_labels, all_preds = [], []
 
         with torch.no_grad():
-            pbar = tqdm(loader, desc=f"[Text Test]")
+            pbar = tqdm(loader, desc="[Text Test]")
             for batch in pbar:
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
@@ -251,16 +269,14 @@ class TextTrainer:
         ))
         return auc
 
-    def training(self, train_loader, val_loader, epochs):
+    def training(self, train_loader: torch.utils.data.DataLoader, val_loader: torch.utils.data.DataLoader, epochs: int) -> None:
         for epoch in range(1, epochs + 1):
             train_loss, train_auc = self.train(train_loader, epoch)
             val_loss, val_auc = self.val(val_loader, epoch)
 
-            # ✅ TensorBoard에서 한 그래프에서 비교
             self.writer.add_scalars("Loss", {"train": train_loss, "val": val_loss}, epoch)
             self.writer.add_scalars("AUC", {"train": train_auc, "val": val_auc}, epoch)
 
             if self.no_improve_count >= self.patience:
-                self.logger.info("🛑 Early stopping triggered.")
+                self.logger.info("Early stopping triggered.")
                 break
-            
